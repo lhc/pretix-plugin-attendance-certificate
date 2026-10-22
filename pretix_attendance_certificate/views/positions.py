@@ -44,14 +44,16 @@ class DownloadCertificateView(EventPermissionRequiredMixin, View):
 
 
 class SendCertificateView(EventPermissionRequiredMixin, View):
-    permission = "can_change_orders"
+    permission = "event.orders:write"
 
     def post(self, request, *args, **kwargs):
         position = _get_position(request, kwargs["position"])
         order = position.order
 
-        # The task sends to position.attendee_email, so require it here too.
-        recipient = position.attendee_email
+        # If attendee's email address is not required/provided
+        # use the order email address as an fallback.
+        recipient = position.attendee_email or position.order.email
+
         if not recipient:
             messages.error(
                 request,

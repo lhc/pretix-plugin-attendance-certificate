@@ -42,8 +42,10 @@ def send_certificate_of_attendance_mails(
                 file=rendered_certificate,
             )
 
+            email_recipient = position.attendee_email or position.order.email
+
             mail(
-                position.attendee_email,
+                email_recipient,
                 subject,
                 message,
                 email_context,

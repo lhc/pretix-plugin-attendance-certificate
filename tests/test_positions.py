@@ -93,18 +93,6 @@ def test_send_certificate_email(logged_in_client, event, order, pos, layout):
 
 
 @pytest.mark.django_db
-def test_send_certificate_without_email(logged_in_client, event, order, pos, layout):
-    with scopes_disabled():
-        pos.attendee_email = None
-        pos.save()
-    djmail.outbox = []
-    response = logged_in_client.post(_send_url(event, pos))
-    assert response.status_code == 302
-    assert len(djmail.outbox) == 0
-    assert any("no email" in m.lower() for m in _messages(response))
-
-
-@pytest.mark.django_db
 def test_download_requires_permission(client, event, order, pos, layout):
     with scopes_disabled():
         user = User.objects.create_user("noperm@dummy.dummy", "noperm")
@@ -114,3 +102,34 @@ def test_download_requires_permission(client, event, order, pos, layout):
     client.force_login(user)
     response = client.get(_download_url(event, pos))
     assert response.status_code != 200
+
+
+@pytest.mark.django_db
+def test_email_sent_to_position_attendee_email(
+    logged_in_client, event, order, item, create_order_position, layout
+):
+    djmail.outbox = []
+    attendee_email = "person@example.com"
+    with scopes_disabled():
+        order_position = create_order_position(
+            order, item, attendee_email=attendee_email
+        )
+
+    logged_in_client.post(_send_url(event, order_position))
+
+    assert len(djmail.outbox) == 1
+    assert djmail.outbox[0].to == [attendee_email]
+
+
+@pytest.mark.django_db
+def test_position_without_attendee_email_fallback_to_order_email(
+    logged_in_client, event, order, item, create_order_position, layout
+):
+    djmail.outbox = []
+    with scopes_disabled():
+        order_position = create_order_position(order, item, attendee_email=None)
+
+    logged_in_client.post(_send_url(event, order_position))
+
+    assert len(djmail.outbox) == 1
+    assert djmail.outbox[0].to == [order.email]
