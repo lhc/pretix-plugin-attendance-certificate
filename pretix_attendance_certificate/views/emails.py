@@ -2,17 +2,58 @@ from django.urls import reverse
 from django.template.loader import get_template
 from django.contrib.humanize.templatetags.humanize import intcomma
 from django.utils.translation import gettext_lazy as _, ngettext
+from django import forms
 
 from pretix.plugins.sendmail.views import BaseSenderView
 from pretix.plugins.sendmail.forms import BaseMailForm
 from pretix.base.models import OrderPosition, Order
 
 from pretix_attendance_certificate.tasks import send_certificate_of_attendance_mails
+from django_scopes.forms import SafeModelMultipleChoiceField
+from pretix.base.models import CheckinList
+from django.utils.translation import pgettext_lazy
+from pretix.control.forms.widgets import Select2Multiple
 
 
 class CertificateEmailForm(BaseMailForm):
+    checked_in = forms.BooleanField(
+        label=pgettext_lazy(
+            "sendmail_form",
+            "Send out certificates only to recipients with check-in on any list",
+        ),
+        required=False,
+        initial=True,
+    )
+    checkin_lists = SafeModelMultipleChoiceField(
+        queryset=CheckinList.objects.none(), required=False
+    )  # overridden later
+
     def __init__(self, *args, **kwargs) -> None:
+        event = self.event = kwargs["event"]
         super().__init__(*args, **kwargs)
+
+        self.fields["checkin_lists"].queryset = event.checkin_lists.all()
+        self.fields["checkin_lists"].widget = Select2Multiple(
+            attrs={
+                "data-model-select2": "generic",
+                "data-select2-url": reverse(
+                    "control:event.orders.checkinlists.select2",
+                    kwargs={
+                        "event": event.slug,
+                        "organizer": event.organizer.slug,
+                    },
+                ),
+                "data-placeholder": pgettext_lazy(
+                    "sendmail_form", "Restrict to recipients with check-in on list"
+                ),
+            }
+        )
+        self.fields["checkin_lists"].widget.choices = self.fields[
+            "checkin_lists"
+        ].choices
+        self.fields["checkin_lists"].label = pgettext_lazy(
+            "sendmail_form", "Restrict to recipients with check-in on list"
+        )
 
 
 class SendCertificateEmailView(BaseSenderView):
@@ -39,16 +80,27 @@ class SendCertificateEmailView(BaseSenderView):
 
     def get_object_queryset(self, form):
         event = self.request.event
-        return OrderPosition.objects.filter(
+
+        order_positions = OrderPosition.objects.filter(
             canceled=False,
             item__admission=True,
             order__event=event,
             order__status__in=[Order.STATUS_PAID],
-            # Temporary hack to avoid sending certificates
-            # to attendees without checkin. The proper solution
-            # is to add more filtering capabilities to the form.
-            all_checkins__successful=True,
-        ).distinct()
+        )
+
+        checked_in = form.cleaned_data["checked_in"]
+        if checked_in:
+            order_positions = order_positions.filter(
+                all_checkins__successful=checked_in
+            )
+
+        checkin_lists = form.cleaned_data["checkin_lists"]
+        if checkin_lists:
+            order_positions = order_positions.filter(
+                all_checkins__list__in=checkin_lists
+            )
+
+        return order_positions.distinct()
 
     def describe_match_size(self, cnt):
         return ngettext(

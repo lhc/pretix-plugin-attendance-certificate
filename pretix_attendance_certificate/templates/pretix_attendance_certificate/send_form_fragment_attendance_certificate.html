@@ -1,3 +1,18 @@
 {% load i18n %}
 {% load bootstrap3 %}
-{% trans 'This email will be sent to all attendees with an admission ticket' %}
+<div class="row">
+    <div class="col-md-9 col-md-offset-3">
+        <div class="panel-group">
+            <div class="panel panel-default">
+                <div class="panel-heading">
+                    <label data-toggle="collapse" data-target="#checkin_filter">
+                        {{ form.checked_in }} {{ form.checked_in.label }}
+                    </label>
+                </div>
+                <div id="checkin_filter" class="panel-body panel-collapse collapse {% if form.checked_in.value %} out {% else %} in {% endif %}">
+                    {% bootstrap_field form.checkin_lists layout='horizontal' %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
