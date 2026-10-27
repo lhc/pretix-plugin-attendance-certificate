@@ -44,6 +44,10 @@ class SendCertificateEmailView(BaseSenderView):
             item__admission=True,
             order__event=event,
             order__status__in=[Order.STATUS_PAID],
+            # Temporary hack to avoid sending certificates
+            # to attendees without checkin. The proper solution
+            # is to add more filtering capabilities to the form.
+            all_checkins__successful=True,
         ).distinct()
 
     def describe_match_size(self, cnt):
